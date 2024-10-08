@@ -2,6 +2,8 @@ package bot_connect
 
 import (
 	"bot/internal/app/commands"
+	"bot/internal/app/helper"
+	"bot/internal/app/message"
 	"bot/internal/app/services"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/joho/godotenv"
@@ -21,24 +23,26 @@ func Init() {
 			log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
 
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "")
+
+			// вроде ка кнету меня команд в боте - удалить
 			switch update.Message.Text {
 			case "/help":
 				help := commands.Help(update)
 				msg = tgbotapi.NewMessage(update.Message.Chat.ID, help)
-			default:
-				defaultMsg := commands.Default(update)
-				msg = tgbotapi.NewMessage(update.Message.Chat.ID, defaultMsg)
 			}
 
 			switch {
 			// если в начале стоит плюс
 			case strings.HasPrefix(update.Message.Text, "+"):
-				result := services.Calc(update.Message.Text)
+				result := services.Incomes(update)
 				msg = tgbotapi.NewMessage(update.Message.Chat.ID, result)
-				// определить что ввел пользователь
-
-				// если это сложение чисел
-				// если это расход
+			// если в начале число
+			case helper.CheckIfStartsWithDigit(update):
+				result := services.Expenses(update)
+				msg = tgbotapi.NewMessage(update.Message.Chat.ID, result)
+			default:
+				errorIncomingData := message.ErrorIncomingData(update)
+				msg = tgbotapi.NewMessage(update.Message.Chat.ID, errorIncomingData)
 			}
 
 			bot.Send(msg)

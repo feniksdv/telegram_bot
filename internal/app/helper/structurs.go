@@ -27,5 +27,4 @@ func GetContactName(update tgbotapi.Update) string {
 	}
 
 	return contactName
-
 }
