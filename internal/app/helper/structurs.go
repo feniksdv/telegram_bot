@@ -28,3 +28,9 @@ func GetContactName(update tgbotapi.Update) string {
 
 	return contactName
 }
+
+type SessionBots struct {
+	UserTelegramId *string `json:"user_telegram_id"`
+	UserId         *string `json:"user_id"`
+	DeletedAt      *string `json:"deleted_at"`
+}
