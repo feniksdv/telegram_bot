@@ -4,27 +4,18 @@ import (
 	"bot/internal/app/helper"
 	"bot/internal/app/message"
 	"bot/internal/app/services"
-	"bot/internal/database"
+	"bot/internal/database/category_incomes"
+	"bot/internal/database/category_sources"
+	"bot/internal/database/customers"
+	"bot/internal/database/session_bots"
 	"fmt"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/joho/godotenv"
 	"log"
 	"os"
 	"strconv"
 	"strings"
-)
 
-var numericKeyboard = tgbotapi.NewInlineKeyboardMarkup(
-	tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonURL("1.com", "http://1.com"),
-		tgbotapi.NewInlineKeyboardButtonData("2", "2"),
-		tgbotapi.NewInlineKeyboardButtonData("3", "3"),
-	),
-	tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("4", "4"),
-		tgbotapi.NewInlineKeyboardButtonData("5", "5"),
-		tgbotapi.NewInlineKeyboardButtonData("6", "6"),
-	),
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/joho/godotenv"
 )
 
 // Init инициализация бота
@@ -34,55 +25,34 @@ func Init() {
 
 	for update := range updates {
 		if update.Message != nil {
-			log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
+			// открываем сессию записи данных
+			var step uint8
+			sessionBots := session_bots.GetByUserTelegramId(update.Message.From.ID)
 
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "")
-
-			// открываем ссесию записи данных
-			// session_bot - поиск по user_telegram_id и deleted_at = null если нет, то запускаем step 1
-			// иначе вернуть step и запустить логику ниже
-
-			query := database.GetByUserTelegramId()
-			if query == nil {
-				fmt.Println("null")
+			if sessionBots == nil {
+				step = 1
+				fmt.Println("step 1")
 			} else {
-				fmt.Println("user ID = " + *query)
+				step = *sessionBots.Step + 1
+				fmt.Printf("step %d", step)
 			}
-			// step 1
-			// создаем запиьс в session_bot
-			// из customers и users получаем нужные поля
-			// сохранить расходи или доход id операции
-			// возвращаем step и запускаем логику ниже
-			switch {
-			// если в начале стоит плюс
-			case strings.HasPrefix(update.Message.Text, "+"):
-				result := services.Incomes(update)
-				msg = tgbotapi.NewMessage(update.Message.Chat.ID, result)
-			// если в начале число
-			case helper.CheckIfStartsWithDigit(update):
-				result := services.Expenses(update)
-				msg = tgbotapi.NewMessage(update.Message.Chat.ID, result)
-			default:
-				errorIncomingData := message.ErrorIncomingData(update)
-				msg = tgbotapi.NewMessage(update.Message.Chat.ID, errorIncomingData)
+
+			switch step {
+			case 1:
+				msg, keyboard := handleStep1(update)
+				msg.ReplyMarkup = keyboard
+				bot.Send(msg)
+			case 2:
+				msg, keyboard := handleStep2(update)
+				msg.ReplyMarkup = keyboard
+				bot.Send(msg)
+			case 3:
+				handleStep3(update, bot)
 			}
-			// первый шаг вернуть должен набор кнопок с категориями - в зависимости расходы доходы
-
-			// step 2
-			// получает значение кнопки - сохраняет где надо и возвращает сообщение введите описание
-			// возвращает набор откуда производились траты
-
-			// step 3
-			// получаем id трат и сохроняем
-			// закрываем ссесию
-
-			msg.ReplyMarkup = numericKeyboard
-			bot.Send(msg)
 		}
 	}
 }
 
-// Подключение к боту Telegram
 func connect() (tgbotapi.UpdatesChannel, *tgbotapi.BotAPI) {
 	err := godotenv.Load()
 	if err != nil {
@@ -94,11 +64,10 @@ func connect() (tgbotapi.UpdatesChannel, *tgbotapi.BotAPI) {
 
 	bot, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
-		log.Panic("Инициализация бота завершилась ошибкой: ", err)
+		log.Panic("Инициализация бота завершилась ошибочно: ", err)
 	}
 
-	// Отладка бота
-	bot.Debug, err = strconv.ParseBool(botDebug)
+	bot.Debug, _ = strconv.ParseBool(botDebug)
 
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
@@ -109,4 +78,68 @@ func connect() (tgbotapi.UpdatesChannel, *tgbotapi.BotAPI) {
 	updates := bot.GetUpdatesChan(config)
 
 	return updates, bot
+}
+
+func handleStep1(update tgbotapi.Update) (tgbotapi.MessageConfig, *tgbotapi.ReplyKeyboardMarkup) {
+	messageStr := "Выберите категорию доходов"
+	// var keyboard tgbotapi.ReplyKeyboardMarkup
+
+	switch {
+	// если в начале стоит плюс
+	case strings.HasPrefix(update.Message.Text, "+"):
+		_, keyboard := services.Incomes(update)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, messageStr)
+		return msg, keyboard
+	// если в начале число
+	case helper.CheckIfStartsWithDigit(update):
+		_, keyboard := services.Expenses(update)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, messageStr)
+		return msg, keyboard
+	default:
+		messageStr = message.ErrorIncomingData(update)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, messageStr)
+		return msg, nil
+	}
+
+}
+
+func handleStep2(update tgbotapi.Update) (tgbotapi.MessageConfig, tgbotapi.ReplyKeyboardMarkup) {
+	message := "Выберите форму оплаты:"
+	customer := customers.GetByCustomerTelegramId(update.Message.From.ID)
+	// Получите категории из таблицы category_incomes
+	categories, err := category_incomes.GetCategoryIncomeByUserIdAndName(customer.UserID, update.Message.Text)
+	if err != nil {
+		message = fmt.Sprintf("Ошибка при получении категорий: %v, пришла строка %s", err, update.Message.Text)
+	}
+	session_bots.UpdateStep2(update.Message.MessageID, *categories.Name, *categories.Id, update.Message.From.ID, customer.UserID)
+
+	msg := tgbotapi.NewMessage(update.Message.Chat.ID, message)
+	keyboard := services.Sources(customer.UserID)
+	return msg, keyboard
+}
+
+func handleStep3(update tgbotapi.Update, bot *tgbotapi.BotAPI) {
+	message := "Данные сохранены"
+	customer := customers.GetByCustomerTelegramId(update.Message.From.ID)
+	// Получите категории из таблицы category_incomes
+	categories, err := category_sources.GetCategorySourceByUserIdAndName(customer.UserID, update.Message.Text)
+	if err != nil {
+		message = fmt.Sprintf("Ошибка при получении категорий: %v, пришла строка %s", err, update.Message.Text)
+	}
+	session_bots.UpdateStep3(update.Message.MessageID, *categories.Name, *categories.ID, update.Message.From.ID, customer.UserID)
+	closeKeyboard(bot, update.Message.Chat.ID, message)
+}
+
+func closeKeyboard(bot *tgbotapi.BotAPI, chatID int64, message string) {
+	replyMarkup := tgbotapi.ReplyKeyboardRemove{
+		RemoveKeyboard: true,
+		Selective:      false,
+	}
+
+	msg := tgbotapi.NewMessage(chatID, message)
+	msg.ReplyMarkup = replyMarkup
+
+	if _, err := bot.Send(msg); err != nil {
+		log.Println(err)
+	}
 }
