@@ -129,7 +129,7 @@ func UpdateStep2(messageId int, categoryName string, categoryId uint64, telegram
 			WHERE user_telegram_id = ? and user_id = ? and deleted_at IS NULL and step = 1
 		`
 
-	_, err := db.Exec(query, categoryId, categoryName, messageId, telegramUserId, userId)
+	_, err := db.Exec(query, categoryId, categoryName, messageId, telegramUserId, *userId)
 	if err != nil {
 		return fmt.Errorf("failed to update session_bots: %w", err)
 	}
@@ -146,12 +146,32 @@ func UpdateStep3(messageId int, categoryName string, categoryId uint64, telegram
 			SET category_source_id = ?,
 				category_source_name = ?,
 				source_message_id = ?,
-				step = 3,
-				deleted_at = CURRENT_TIMESTAMP
+				step = 3
 			WHERE user_telegram_id = ? and user_id = ? and deleted_at IS NULL and step = 2
 		`
 
-	_, err := db.Exec(query, categoryId, categoryName, messageId, telegramUserId, userId)
+	_, err := db.Exec(query, categoryId, categoryName, messageId, telegramUserId, *userId)
+	if err != nil {
+		return fmt.Errorf("failed to update session_bots: %w", err)
+	}
+
+	return nil
+}
+
+func UpdateStep4(messageId int, description string, telegramUserId int64, userId *int32) error {
+	db := database.Connect()
+	defer db.Close()
+
+	query := `
+			UPDATE session_bots
+			SET description = ?,
+				description_message_id = ?,
+				step = 4,
+				deleted_at = CURRENT_TIMESTAMP
+			WHERE user_telegram_id = ? and user_id = ? and deleted_at IS NULL and step = 3
+		`
+
+	_, err := db.Exec(query, description, messageId, telegramUserId, userId)
 	if err != nil {
 		return fmt.Errorf("failed to update session_bots: %w", err)
 	}
