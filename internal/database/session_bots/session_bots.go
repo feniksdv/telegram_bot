@@ -3,6 +3,8 @@ package session_bots
 import (
 	"bot/internal/app/helper"
 	"bot/internal/database"
+	"bot/internal/database/expenses"
+	"bot/internal/database/incomes"
 	"database/sql"
 	"fmt"
 	"time"
@@ -166,8 +168,7 @@ func UpdateStep4(messageId int, description string, telegramUserId int64, userId
 			UPDATE session_bots
 			SET description = ?,
 				description_message_id = ?,
-				step = 4,
-				deleted_at = CURRENT_TIMESTAMP
+				step = 4
 			WHERE user_telegram_id = ? and user_id = ? and deleted_at IS NULL and step = 3
 		`
 
@@ -176,6 +177,76 @@ func UpdateStep4(messageId int, description string, telegramUserId int64, userId
 		return fmt.Errorf("failed to update session_bots: %w", err)
 	}
 
+	return nil
+}
+
+func UpdateStep5(telegramUserId int64, userId *int32) error {
+	db := database.Connect()
+	defer db.Close()
+
+	q := `
+			SELECT user_telegram_id,
+			user_id,
+			money,
+			money_message_id,
+			category_id,
+			category_name,
+			category_message_id,
+			type,
+			unit_id,
+			description,
+			description_message_id,
+			category_source_id,
+			category_source_name,
+			source_message_id 
+			FROM session_bots
+			WHERE user_telegram_id = ? and user_id = ? and deleted_at IS NULL and step = 4 
+	`
+	results, e := db.Query(q, telegramUserId, userId)
+	if e != nil {
+		panic(e.Error())
+	}
+	defer results.Close() // Закрываем результаты после использования
+
+	var sessionBot helper.SessionBots
+	if results.Next() {
+		if err := results.Scan(
+			&sessionBot.UserTelegramId,
+			&sessionBot.UserId,
+			&sessionBot.Money,
+			&sessionBot.MoneyMessageId,
+			&sessionBot.CategoryId,
+			&sessionBot.CategoryName,
+			&sessionBot.CategoryMessageId,
+			&sessionBot.Type,
+			&sessionBot.UnitId,
+			&sessionBot.Description,
+			&sessionBot.DescriptionMessageId,
+			&sessionBot.CategorySourceId,
+			&sessionBot.CategorySourceName,
+			&sessionBot.SourceMessageId); err != nil {
+			return fmt.Errorf("failed to scan type: %w", err)
+		}
+	} else {
+		return fmt.Errorf("no rows found")
+	}
+
+	query := `
+			UPDATE session_bots
+			SET deleted_at = CURRENT_TIMESTAMP
+			WHERE user_telegram_id = ? and user_id = ? and deleted_at IS NULL and step = 4
+		`
+
+	_, err := db.Exec(query, telegramUserId, userId)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	if *sessionBot.Type == "incomes" {
+		incomes.Create(sessionBot)
+	} else {
+		expenses.Create(sessionBot)
+	}
 	return nil
 }
 

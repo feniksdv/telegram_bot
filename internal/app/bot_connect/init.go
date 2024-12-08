@@ -134,7 +134,7 @@ func handleStep4(update tgbotapi.Update, bot *tgbotapi.BotAPI) {
 	message := "Данные сохранены"
 	customer := customers.GetByCustomerTelegramId(update.Message.From.ID)
 	session_bots.UpdateStep4(update.Message.MessageID, update.Message.Text, update.Message.From.ID, customer.UserID)
-	end(bot, update.Message.Chat.ID, message)
+	end(bot, update, update.Message.Chat.ID, message)
 }
 
 func closeKeyboard(bot *tgbotapi.BotAPI, chatID int64, message string) {
@@ -151,10 +151,12 @@ func closeKeyboard(bot *tgbotapi.BotAPI, chatID int64, message string) {
 	}
 }
 
-func end(bot *tgbotapi.BotAPI, chatID int64, message string) {
+func end(bot *tgbotapi.BotAPI, update tgbotapi.Update, chatID int64, message string) {
 	msg := tgbotapi.NewMessage(chatID, message)
 
 	if _, err := bot.Send(msg); err != nil {
 		log.Println(err)
 	}
+	customer := customers.GetByCustomerTelegramId(update.Message.From.ID)
+	session_bots.UpdateStep5(update.Message.From.ID, customer.UserID)
 }

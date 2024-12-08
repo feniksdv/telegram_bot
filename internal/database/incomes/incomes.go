@@ -1,13 +1,38 @@
 package incomes
 
-import "bot/internal/database"
+import (
+	"bot/internal/app/helper"
+	"bot/internal/database"
+	"fmt"
+)
 
-func Create() {
+func Create(sessionBot helper.SessionBots) {
 	db := database.Connect()
 	defer db.Close()
-	results, err := db.Prepare("INSERT INTO session_bots(user_telegram_id, user_id, money, money_message_id, typy, unit_id, step) VALUES (?,?,?,?,?,?,?)")
+
+	query := `
+		INSERT INTO incomes
+		(	
+			user_id,
+			income_message_id,
+			category_income_id,
+			source_message_id,
+			category_source_id,
+			message_id,
+			money,
+			unit,
+			unit_id,
+			description_message_id,
+			description,
+			created_at,
+			updated_at
+		) 
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+	`
+	results, err := db.Prepare(query)
 	if err != nil {
-		panic(err.Error()) // proper error handling instead of panic in your app
+		fmt.Println(" Ошибка записи в incomes - ")
+		panic(err.Error())
 	}
-	results.Exec('1', '1', '1', '1', '1', '1', '1', '1')
+	results.Exec(sessionBot.UserId, sessionBot.CategoryMessageId, sessionBot.CategoryId, sessionBot.SourceMessageId, sessionBot.CategorySourceId, sessionBot.MoneyMessageId, sessionBot.Money, "₽", sessionBot.UnitId, sessionBot.DescriptionMessageId, sessionBot.Description)
 }
